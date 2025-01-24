@@ -1,5 +1,4 @@
 import numpy as np
-
 import random
 
 # Function to generate a deck of cards
@@ -12,8 +11,8 @@ def generate_deck():
         for suit in suits:
             deck.append((value, suit))
     return deck
-    
 
+    
 # Function to deal cards to players
 def deal_cards(deck, num_players):
     random.shuffle(deck)
@@ -21,7 +20,7 @@ def deal_cards(deck, num_players):
     for i in range(num_players):
         hand = []
         for j in range(4): # Deal 4 cards per player
-            hand.append(deck.pop())  
+            hand.append(deck.pop())
         hands.append(hand)
     return hands, deck
 
@@ -44,12 +43,21 @@ def print_hand(hand, revealed):
 num_players = 2
 print("\nWelcome to Golf Card Game!")
 deck = generate_deck()
+#print(deck)
+
 hands, deck = deal_cards(deck, num_players)
+
+#print(deck.pop())
+
+print(hands[0])
+print(hands[1])
 
 revealed = []
 for n in range(num_players):
     revealed.append([False, False, False, False])
 discard_pile = [deck.pop()]
+
+print(discard_pile)
 
 # Main game loop
 game_over = False
@@ -61,33 +69,39 @@ while not game_over:
         print(f"Discard pile: {discard_pile[-1][0]} of {discard_pile[-1][1]}")
 
         # Player action
-        action = input("Choose an action - (1) Flip a card, (2) Swap with discard, (3) Draw a card: ")
+        action = input("Enter '1' to draw a card: ")
         if action == '1':
-            idx = int(input("Choose a card to flip (1-4): ")) - 1
-            if not revealed[player][idx]:
-                revealed[player][idx] = True
-            else:
-                print("Card already revealed!")
+            draw_action = input("Choose an action - (1) Draw from unknown deck or  (2) Draw from top of discard pile: ")
 
-        elif action == '2':
-            idx = int(input("Choose a card to replace with discard (1-4): ")) - 1
-            if not revealed[player][idx]:
-                revealed[player][idx] = True
-            discard_pile.append(hands[player][idx])
-            hands[player][idx] = discard_pile.pop()
+            if draw_action == '1':
+                drawn_card = deck.pop()
+                print(f"You drew: {drawn_card[0]} of {drawn_card[1]}")
 
-        elif action == '3':
-            drawn_card = deck.pop()
-            print(f"You drew: {drawn_card[0]} of {drawn_card[1]}")
-            swap = input("Do you want to swap this card? (y/n): ")
-            if swap.lower() == 'y':
-                idx = int(input("Choose a card to replace (1-4): ")) - 1
+                keep_or_discard_action = input("Choose an action - (1) Replace a card from your hand or (2) Discard drawn card: ")
+
+                if keep_or_discard_action == '1':
+                    idx = int(input("Choose a card from your hand to replace with drawn card (1-4): ")) - 1
+
+                    if not revealed[player][idx]:
+                        revealed[player][idx] = True
+                    print(hands[player][idx])
+                    discard_pile.append(hands[player][idx])
+                    hands[player][idx] = drawn_card
+
+                elif keep_or_discard_action == '2':
+                    discard_pile.append(drawn_card)
+
+            elif draw_action == '2':
+                drawn_discard = discard_pile.pop()
+                idx = int(input("Choose a card from your hand to replace with card drawn from top of discard (1-4): ")) - 1
                 if not revealed[player][idx]:
                     revealed[player][idx] = True
                 discard_pile.append(hands[player][idx])
-                hands[player][idx] = drawn_card
-            else:
-                discard_pile.append(drawn_card)
+                hands[player][idx] = drawn_discard
+
+        print(f"\n--- Player {player + 1}'s hand ---")
+        print_hand(hands[player], revealed[player])
+        print(f"Discard pile: {discard_pile[-1][0]} of {discard_pile[-1][1]}")  
 
         # Check if all cards are revealed
         if all(revealed[player]):
