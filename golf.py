@@ -11,6 +11,7 @@ def generate_deck():
         for suit in suits:
             deck.append((value, suit))
     return deck
+# test
 
     
 # Function to deal cards to players
