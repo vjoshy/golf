@@ -22,7 +22,7 @@ def get_state(player, hands, revealed, discard_pile):
         discard_top = -1
     return (tuple(agent_hand), discard_top)
 
-
+# epsilon - greedy actions
 def choose_action(state, epsilon):
 
     if random.random() < epsilon:
@@ -94,6 +94,7 @@ def train_agent(episodes=10000):
 
     for episode in (range(episodes)):
 
+        # alpha decay
         current_alpha = alpha * (1 - episode/episodes)
         current_epsilon = epsilon * (1 - episode/episodes)
 
@@ -174,15 +175,16 @@ def train_agent(episodes=10000):
 
             # Terminal state handling (moved outside player loop)
             if game_over:
+                # scores are total sum of cards in hand
                 agent_score = sum(card[0] for card in hands[1])
                 opponent_score = sum(card[0] for card in hands[0])
                 
                 # If opponent has finished
                 if all(revealed[0]):  
                     if agent_score < opponent_score:
-                        final_reward = 100  
+                        final_reward = 100  # WIN
                     else:
-                        final_reward = -100
+                        final_reward = -100 # LOSE
                 else:
                     final_reward = -agent_score  # Just optimize for low score
                 
@@ -195,7 +197,7 @@ def train_agent(episodes=10000):
                 Q[(current_state, action)] += current_alpha * (reward + gamma * max_next_q - Q[(current_state, action)])
 
         if episode % 1000 == 0:
-            print(f"Episode {episode}, Alpha: {current_alpha:.4f}, Epsilon: {current_epsilon:.4f}")
+            print(f"Episode {episode}, alpha: {current_alpha:.4f}, epsilon: {current_epsilon:.4f}")
 
 
 
