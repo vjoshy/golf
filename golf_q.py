@@ -6,8 +6,8 @@ from tqdm import tqdm
 # Q-table with default value 0
 Q = defaultdict(float)
 alpha = 0.1  # learning rate
-gamma = 0.99  # discount factor
-epsilon = 0.1  # exploration rate
+gamma = 0.9  # discount factor
+epsilon = 0.5  # exploration rate
 
 def get_state(player, hands, revealed, discard_pile):
     agent_hand = []
@@ -64,7 +64,7 @@ def deal_cards(deck, num_players):
         hand = []
         for j in range(4): # Deal 4 cards per player
             hand.append(deck.pop())
-        hands.append(hand)
+        hands.append(hand)  
     return hands, deck
 
 # updates hands and discards
@@ -78,14 +78,9 @@ def update_deck(card, discard_pile, revealed, idx, player, hands):
 def calculate_reward(hands, revealed, player):
     
     current_sum = sum(hands[player][i][0] for i in range(4) if revealed[player][i])
-    num_revealed = sum(1 for r in revealed[player] if r)
     
-    # terminal state - means game has ended and all four cards have been revealed
-    if num_revealed == 4:  
-        return -current_sum  # Lower score is better - because minimizing sum 
-    
-    # small negative reward for each move to encourage finishing the game
-    return -0.1
+    # negative reward for minimizing sum
+    return -current_sum
 
 
 def train_agent(episodes=10000):
@@ -95,9 +90,8 @@ def train_agent(episodes=10000):
     for episode in (range(episodes)):
 
         # alpha decay
-        current_alpha = alpha * (1 - episode/episodes)
-        current_epsilon = epsilon * (1 - episode/episodes)
-
+        current_alpha = max(0.0001, alpha * np.exp(-0.01 * episode))
+        current_epsilon = max(0.0001, epsilon * np.exp(-0.0001 * episode))
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
 
@@ -180,13 +174,10 @@ def train_agent(episodes=10000):
                 opponent_score = sum(card[0] for card in hands[0])
                 
                 # If opponent has finished
-                if all(revealed[0]):  
-                    if agent_score < opponent_score:
-                        final_reward = 100  # WIN
-                    else:
-                        final_reward = -100 # LOSE
+                if agent_score < opponent_score:
+                    final_reward = 100  # WIN
                 else:
-                    final_reward = -agent_score  # Just optimize for low score
+                    final_reward = -100 # LOSE
                 
                 # update Q-value with final reward 
                 Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
@@ -267,5 +258,5 @@ def test_agent(num_games=100):
 
 
 # Train and test the agent
-train_agent(episodes=1000001)
+train_agent(episodes=100001)
 test_agent(num_games=100)
