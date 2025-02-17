@@ -91,7 +91,7 @@ def train_agent(episodes=10000):
 
         # alpha decay
         current_alpha = max(0.0001, alpha * np.exp(-0.01 * episode))
-        current_epsilon = max(0.0001, epsilon * np.exp(-0.0001 * episode))
+        current_epsilon = max(0.01, epsilon * np.exp(-0.001 * episode))
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
 
@@ -125,8 +125,8 @@ def train_agent(episodes=10000):
                             discard_pile.append(card)
                     else:
 
-                        #if not discard_pile:
-                            #continue
+                        if not discard_pile:
+                            continue
                         card = discard_pile.pop()
                         idx = random.randint(0, 3)
                         update_deck(card, discard_pile, revealed, idx, 0, hands)
@@ -253,7 +253,7 @@ def test_agent(num_games=100):
             wins += 1
 
     print(f"Average score over {num_games} games: {total_score/num_games}")
-    print(f"Number of wins: {wins}/{num_games}")
+    print(f"Number of wins: {wins}/{num_games} ({wins/num_games*100}%)")
 
 
 
