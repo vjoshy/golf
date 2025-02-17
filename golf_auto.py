@@ -83,29 +83,92 @@ while not game_over:
     keep_or_discard_action = None
     for player in range(num_players):
 
-        if player == 1:
-
+        if player == 1:  # Automated player
             print_hand(hands[player], revealed[player], player, discard_pile)
+            
+            # Rule 1: Check discard pile top card
+            discard_value = discard_pile[-1][0]
+            
+            if discard_value < 5:
+                # Draw from discard pile
+                card = discard_pile.pop()
+                print(f"Computer drew: {card[0]} of {card[1]} from discard pile.")
 
-            action = '1'
-            draw_action = random.choice(['1','2'])         
+                # Find highest revealed card or pick hidden card
+                highest_revealed_idx = -1
+                highest_revealed_value = -1
+                hidden_indices = []
+                
+                for i in range(4):
+                    if revealed[player][i]:
+                        if hands[player][i][0] > highest_revealed_value:
+                            highest_revealed_value = hands[player][i][0]
+                            highest_revealed_idx = i
+                    else:
+                        hidden_indices.append(i)
+                
+                # Rule 4: If card is less than 5 and not less than revealed cards
+                if highest_revealed_value == -1 or card[0] >= highest_revealed_value:
+                    # Replace a hidden card if available
+                    if hidden_indices:
+                        idx = random.choice(hidden_indices)
+                        update_deck(card, discard_pile, revealed, idx, player, hands)
+                    else:
+                        # No hidden cards, replace highest revealed card
+                        update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
+                else:
+                    # Replace highest revealed card
+                    update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
+            
+            else:
+                # Rule 2: Draw from deck if discard >= 5
+                if not deck:
+                    game_over = True
+                    break
 
-            if draw_action == '1':
-                drawn_card = deck.pop()
-                print(f"Computer drew: {drawn_card[0]} of {drawn_card[1]}")
+                card = deck.pop()
+                print(f"Computer drew: {card[0]} of {card[1]}")
 
-                keep_or_discard_action = random.choice(['1','2'])
-                if keep_or_discard_action == '1':
-                    idx = random.choice([0,1,2,3])
-                    update_deck(drawn_card, discard_pile, revealed, idx, player, hands)
-
-                elif keep_or_discard_action == '2':
-                    discard_pile.append(drawn_card)
-
-            elif draw_action == '2':
-                drawn_discard = discard_pile.pop()
-                idx = random.choice([0,1,2,3])
-                update_deck(drawn_discard, discard_pile, revealed, idx, player, hands)
+                # Rule 3: Handle card drawn from deck
+                if card[0] > 5:
+                    # Find if there's a higher revealed card to replace
+                    found_higher = False
+                    replace_idx = -1
+                    for i in range(4):
+                        if revealed[player][i] and hands[player][i][0] > card[0]:
+                            found_higher = True
+                            replace_idx = i
+                            break
+                    
+                    if found_higher:
+                        update_deck(card, discard_pile, revealed, replace_idx, player, hands)
+                    else:
+                        # Discard if no higher card found
+                        discard_pile.append(card)
+                else:
+                    # Card is <= 5, try to replace highest revealed card or hidden card
+                    highest_revealed_idx = -1
+                    highest_revealed_value = -1
+                    hidden_indices = []
+                    
+                    for i in range(4):
+                        if revealed[player][i]:
+                            if hands[player][i][0] > highest_revealed_value:
+                                highest_revealed_value = hands[player][i][0]
+                                highest_revealed_idx = i
+                        else:
+                            hidden_indices.append(i)
+                    
+                    if highest_revealed_value > card[0]:
+                        # Replace highest revealed card
+                        update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
+                    elif hidden_indices:
+                        # Replace a random hidden card
+                        idx = random.choice(hidden_indices)
+                        update_deck(card, discard_pile, revealed, idx, player, hands)
+                    else:
+                        # No good replacement options, discard
+                        discard_pile.append(card)
 
         else:
             
