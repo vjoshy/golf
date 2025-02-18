@@ -9,11 +9,13 @@ import torch.nn.functional as F
 # Hyperparameters
 MEMORY_SIZE = 100000
 BATCH_SIZE = 64
-GAMMA = 0.99
+GAMMA = 0.9
 EPSILON_START = 1.0
-EPSILON_END = 0.0001
-EPSILON_DECAY = 0.995
-LEARNING_RATE = 0.001
+EPSILON_END = 0.0
+EPSILON_DECAY = 0.9
+INITIAL_LR = 0.01
+LR_DECAY = 0.99
+MIN_LR = 0.0001
 TARGET_UPDATE = 100  # How often to update target network
 
 # Convert game state to tensor for neural network
@@ -196,7 +198,8 @@ def train_dqn(episodes=10000):
     target_net.load_state_dict(policy_net.state_dict())
     
     # adam optimizer
-    optimizer = torch.optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(policy_net.parameters(), lr=INITIAL_LR)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     memory = ReplayMemory(MEMORY_SIZE)
     
     epsilon = EPSILON_START
@@ -269,6 +272,9 @@ def train_dqn(episodes=10000):
                 loss = optimize_model(policy_net, target_net, memory, optimizer)
                 if loss is not None:
                     episode_loss += loss
+
+                    if optimizer.param_groups[0]['lr'] > MIN_LR:
+                        scheduler.step()
         
         # Update target network
         #  we copy the parameters every 10 episodes,
@@ -280,8 +286,8 @@ def train_dqn(episodes=10000):
         # Decay epsilon
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
         
-        if episode % 5000 == 0:
-            print(f"Episode {episode}, Loss: {episode_loss:.4f}, Epsilon: {epsilon:.4f}")
+        if episode % 500 == 0:
+            print(f"Episode {episode}, Loss: {episode_loss:.4f}, Epsilon: {epsilon:.4f}, LR: {optimizer.param_groups[0]['lr']:.4f}")
     
     return policy_net
 
@@ -347,5 +353,5 @@ def test_dqn(policy_net, num_games=100):
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=501)
+policy_net = train_dqn(episodes=2001)
 test_dqn(policy_net, num_games=1000)
