@@ -424,7 +424,7 @@ def train_dqn(episodes=10000):
                     game_over = True
                     agent_score = sum(card[0] for card in hands[1])
                     opponent_score = sum(card[0] for card in hands[0])
-                    reward = 5.0 if agent_score < opponent_score else -5.0
+                    reward += 5.0 if agent_score < opponent_score else -5.0
                 
                 # Store transition in memory
                 memory.push(current_state, action, reward, next_state, done)
@@ -432,7 +432,7 @@ def train_dqn(episodes=10000):
                 # Optimize model
                 loss = optimize_model(policy_net, target_net, memory, optimizer)
                 if loss is not None:
-                    episode_loss += loss
+                    episode_loss += (loss - episode_loss)/episode
         
         # Update target network
         #  we copy the parameters every 10 episodes,
@@ -444,7 +444,7 @@ def train_dqn(episodes=10000):
         # Decay epsilon
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
         
-        if episode % 5000 == 0:
+        if episode % 500 == 0:
             print(f"Episode {episode}, Loss: {episode_loss:.4f}, Epsilon: {epsilon:.4f}")
     
     return policy_net

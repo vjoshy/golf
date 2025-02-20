@@ -16,7 +16,7 @@ EPSILON_DECAY = 0.9
 INITIAL_LR = 0.01
 LR_DECAY = 0.99
 MIN_LR = 0.0001
-TARGET_UPDATE = 100  # How often to update target network
+TARGET_UPDATE = 10  # How often to update target network
 
 # Convert game state to tensor for neural network
 # Converts 5x12 tensor into a single vector of length 60
@@ -271,7 +271,7 @@ def train_dqn(episodes=10000):
                 # Optimize model
                 loss = optimize_model(policy_net, target_net, memory, optimizer)
                 if loss is not None:
-                    episode_loss += loss
+                    episode_loss += (loss - episode_loss)/episode
 
                     if optimizer.param_groups[0]['lr'] > MIN_LR:
                         scheduler.step()
@@ -353,5 +353,5 @@ def test_dqn(policy_net, num_games=100):
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=2001)
+policy_net = train_dqn(episodes=1001)
 test_dqn(policy_net, num_games=1000)
