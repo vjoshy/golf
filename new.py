@@ -1,3 +1,5 @@
+# random v random
+
 import numpy as np
 import random
 from collections import deque
@@ -12,7 +14,7 @@ BATCH_SIZE = 64
 GAMMA = 0.85
 EPSILON_START = 1.0
 EPSILON_END = 0.0001
-EPSILON_DECAY = 0.999
+EPSILON_DECAY = 0.99
 INITIAL_LR = 0.01
 LR_DECAY = 0.99
 MIN_LR = 0.0001
@@ -342,6 +344,9 @@ def test_dqn(policy_net, num_games=100):
     wins = 0
     total_score = 0
     total_opponent_score = 0
+
+    opp_end = 0
+    agent_end = 0
     
     for game in range(num_games):
         deck = generate_deck()
@@ -372,7 +377,8 @@ def test_dqn(policy_net, num_games=100):
                     
                     if all(revealed[0]):
                         game_over = True
-                    break
+                        opp_end +=1
+                        break
                 
                 # DQN Agent's turn
                 state = get_state(1, hands, revealed, discard_pile)
@@ -390,6 +396,7 @@ def test_dqn(policy_net, num_games=100):
                 
                 if all(revealed[1]):
                     game_over = True
+                    agent_end +=1
         
         agent_score = sum(card[0] for card in hands[1])
         opponent_score = sum(card[0] for card in hands[0])
@@ -402,6 +409,7 @@ def test_dqn(policy_net, num_games=100):
     print(f"Average score over {num_games} games: {total_score/num_games:.2f}")
     print(f"Averag Opps score: {total_opponent_score/num_games:.2f}")
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
+    print(f"Opp revealed: {opp_end}, agent revealed: {agent_end}")
 
 # Train and test the DQN agent
 policy_net = train_dqn(episodes=2001)

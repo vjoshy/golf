@@ -1,3 +1,6 @@
+### original q -learning tabular 
+# random opponent
+
 import numpy as np
 import random
 from collections import defaultdict
@@ -137,7 +140,7 @@ def train_agent(episodes=10000):
                     
                     if all(revealed[0]):
                         game_over = True
-                    break
+                        break
 
                 # RL Agent's turn (player 1)
                 current_state = get_state(1, hands, revealed, discard_pile)
@@ -236,7 +239,7 @@ def test_agent(num_games=100):
                         update_deck(card, discard_pile, revealed, idx, 0, hands)
                     if all(revealed[0]):
                         game_over = True
-                    break
+                        break
 
                 # RL Agent's turn ~ our hero
                 state = get_state(1, hands, revealed, discard_pile)

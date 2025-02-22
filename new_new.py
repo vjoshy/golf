@@ -1,3 +1,5 @@
+# random train vs rule based
+
 import numpy as np
 import random
 from collections import deque
@@ -342,6 +344,9 @@ def test_dqn(policy_net, num_games=100):
     wins = 0
     total_score = 0
     total_opponent_score = 0
+
+    opp_end = 0
+    agent_end = 0
     
     for game in range(num_games):
         deck = generate_deck()
@@ -444,7 +449,8 @@ def test_dqn(policy_net, num_games=100):
                     
                     if all(revealed[0]):
                         game_over = True
-                    break
+                        opp_end += 1 
+                        break
                 
                 # DQN Agent's turn
                 state = get_state(1, hands, revealed, discard_pile)
@@ -462,6 +468,7 @@ def test_dqn(policy_net, num_games=100):
                 
                 if all(revealed[1]):
                     game_over = True
+                    agent_end += 1
         
         agent_score = sum(card[0] for card in hands[1])
         opponent_score = sum(card[0] for card in hands[0])
@@ -474,7 +481,8 @@ def test_dqn(policy_net, num_games=100):
     print(f"Average score over {num_games} games: {total_score/num_games:.2f}")
     print(f"Averag Opps score: {total_opponent_score/num_games:.2f}")
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
+    print(f"Opp revealed: {opp_end}, agent revealed: {agent_end}")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=1001)
+policy_net = train_dqn(episodes=2001)
 test_dqn(policy_net, num_games=1000)

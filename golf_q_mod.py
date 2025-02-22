@@ -1,3 +1,5 @@
+### rule based opponent - q table
+
 import numpy as np
 import random
 from collections import defaultdict
@@ -198,7 +200,7 @@ def train_agent(episodes=10000):
                     
                     if all(revealed[0]):
                         game_over = True
-                    break
+                        break
 
                 # RL Agent's turn (player 1)
                 current_state = get_state(1, hands, revealed, discard_pile)
@@ -231,10 +233,9 @@ def train_agent(episodes=10000):
 
                 if all(revealed[1]):
                     game_over = True
-                    break
 
-            # Terminal state handling (moved outside player loop)
-            # Update Q-values
+                # Terminal state handling (moved outside player loop)
+                # Update Q-values
                 if game_over:
                     # scores are total sum of cards in hand
                     agent_score = sum(card[0] for card in hands[1])
