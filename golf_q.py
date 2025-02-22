@@ -88,17 +88,18 @@ def train_agent(episodes=10000):
     final_reward = 0
 
     for episode in (range(episodes)):
-
         # alpha decay
         current_alpha = max(0.0001, alpha * np.exp(-0.01 * episode))
         current_epsilon = max(0.01, epsilon * np.exp(-0.001 * episode))
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
 
-        revealed = [[False, False, False, False], [False, False, False, False] ]  
+        revealed = [[False, False, False, False], [False, False, False, False]]  
         discard_pile = [deck.pop()] if deck else []
 
         game_over = False
+        current_state = None
+        action = None
         while not game_over:
             for player in range(2):
                 if game_over:
@@ -124,7 +125,6 @@ def train_agent(episodes=10000):
                         else:
                             discard_pile.append(card)
                     else:
-
                         if not discard_pile:
                             continue
                         card = discard_pile.pop()
@@ -149,7 +149,6 @@ def train_agent(episodes=10000):
                     # replace card
                     if action < 4:  
                         update_deck(card, discard_pile, revealed, action, 1, hands)
-
                     else:  # discard
                         discard_pile.append(card)
 
@@ -164,30 +163,36 @@ def train_agent(episodes=10000):
                 reward = calculate_reward(hands, revealed, 1)
                 next_state = get_state(1, hands, revealed, discard_pile)
 
+                # Terminal state handling
                 if all(revealed[1]):
                     game_over = True
 
-            # Terminal state handling (moved outside player loop)
-            if game_over:
-                # scores are total sum of cards in hand
-                agent_score = sum(card[0] for card in hands[1])
-                opponent_score = sum(card[0] for card in hands[0])
-                
-                # If opponent has finished
-                if agent_score < opponent_score:
-                    final_reward = 100  # WIN
+                # Update Q-values
+                if game_over:
+                    # scores are total sum of cards in hand
+                    agent_score = sum(card[0] for card in hands[1])
+                    opponent_score = sum(card[0] for card in hands[0])
+                    
+                    # If opponent has finished
+                    if agent_score < opponent_score:
+                        final_reward = 100  # WIN
+                    else:
+                        final_reward = -100 # LOSE
+                    
+                    # update Q-value with final reward 
+                    Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
                 else:
-                    final_reward = -100 # LOSE
-                
-                # update Q-value with final reward 
-                Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
-            else:
+                    # Calculate max Q-value for next state
+                    max_next_q = float('-inf')
+                    for a in range(9):
+                        q = Q[(next_state, a)]
+                        if q > max_next_q:
+                            max_next_q = q
+                    
+                    # standard Q-learning update for non-terminal states
+                    Q[(current_state, action)] += current_alpha * (reward + gamma * max_next_q - Q[(current_state, action)])
 
-                # standard Q-learning update for non-terminal states
-                max_next_q = max(Q[(next_state, a)] for a in range(9))
-                Q[(current_state, action)] += current_alpha * (reward + gamma * max_next_q - Q[(current_state, action)])
-
-        if episode % 1000 == 0:
+        if episode % 10000 == 0:
             print(f"Episode {episode}, alpha: {current_alpha:.4f}, epsilon: {current_epsilon:.4f}")
 
 
@@ -223,7 +228,7 @@ def test_agent(num_games=100):
                         update_deck(card, discard_pile, revealed, idx, 0, hands)
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                    break
 
                 # RL Agent's turn ~ our hero
                 state = get_state(1, hands, revealed, discard_pile)
@@ -242,6 +247,7 @@ def test_agent(num_games=100):
 
                 if all(revealed[1]):
                     game_over = True
+                    break
 
         # Calculate final scores
         agent_score = sum(card[0] for card in hands[1])
