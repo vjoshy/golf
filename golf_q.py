@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 # Q-table with default value 0
 Q = defaultdict(float)
-alpha = 0.1  # learning rate
+alpha = 1.0  # learning rate
 gamma = 0.9  # discount factor
 epsilon = 0.5  # exploration rate
 
@@ -89,8 +89,8 @@ def train_agent(episodes=10000):
 
     for episode in (range(episodes)):
         # alpha decay
-        current_alpha = max(0.0001, alpha * np.exp(-0.01 * episode))
-        current_epsilon = max(0.01, epsilon * np.exp(-0.001 * episode))
+        current_alpha = max(0.01, alpha * np.exp(-0.001 * episode))
+        current_epsilon = max(0.01, epsilon * np.exp(-0.0001 * episode))
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
 
@@ -100,8 +100,12 @@ def train_agent(episodes=10000):
         game_over = False
         current_state = None
         action = None
+
+        players = [0, 1]
+        random.shuffle(players)
+        
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -133,7 +137,7 @@ def train_agent(episodes=10000):
                     
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                    break
 
                 # RL Agent's turn (player 1)
                 current_state = get_state(1, hands, revealed, discard_pile)
@@ -181,6 +185,7 @@ def train_agent(episodes=10000):
                     
                     # update Q-value with final reward 
                     Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
+                    break
                 else:
                     # Calculate max Q-value for next state
                     max_next_q = float('-inf')
@@ -208,8 +213,11 @@ def test_agent(num_games=100):
         discard_pile = [deck.pop()] if deck else []
         game_over = False
 
+        players = [0, 1]
+        random.shuffle(players)
+        
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -264,5 +272,5 @@ def test_agent(num_games=100):
 
 
 # Train and test the agent
-train_agent(episodes=100001)
+train_agent(episodes=1000001)
 test_agent(num_games=100)

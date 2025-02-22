@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 # Q-table with default value 0
 Q = defaultdict(float)
-alpha = 1.0  # learning rate
+alpha = 0.1  # learning rate
 gamma = 0.9  # discount factor
 epsilon = 0.5  # exploration rate
 
@@ -100,8 +100,11 @@ def train_agent(episodes=10000):
         #print(discard_pile)
 
         game_over = False
+        players = [0, 1]
+        random.shuffle(players)
+        
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -195,7 +198,7 @@ def train_agent(episodes=10000):
                     
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                    break
 
                 # RL Agent's turn (player 1)
                 current_state = get_state(1, hands, revealed, discard_pile)
@@ -228,28 +231,35 @@ def train_agent(episodes=10000):
 
                 if all(revealed[1]):
                     game_over = True
+                    break
 
             # Terminal state handling (moved outside player loop)
-            if game_over:
-                # scores are total sum of cards in hand
-                agent_score = sum(card[0] for card in hands[1])
-                opponent_score = sum(card[0] for card in hands[0])
-                
-                # If opponent has finished
-                if agent_score < opponent_score:
-                    final_reward = 100  # WIN
+            # Update Q-values
+                if game_over:
+                    # scores are total sum of cards in hand
+                    agent_score = sum(card[0] for card in hands[1])
+                    opponent_score = sum(card[0] for card in hands[0])
+                    
+                    # If opponent has finished
+                    if agent_score < opponent_score:
+                        final_reward = 100  # WIN
+                    else:
+                        final_reward = -100 # LOSE
+                    
+                    # update Q-value with final reward 
+                    Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
                 else:
-                    final_reward = -100 # LOSE
-                
-                # update Q-value with final reward 
-                Q[(current_state, action)] += current_alpha * (final_reward - Q[(current_state, action)])
-            else:
+                    # Calculate max Q-value for next state
+                    max_next_q = float('-inf')
+                    for a in range(9):
+                        q = Q[(next_state, a)]
+                        if q > max_next_q:
+                            max_next_q = q
+                    
+                    # standard Q-learning update for non-terminal states
+                    Q[(current_state, action)] += current_alpha * (reward + gamma * max_next_q - Q[(current_state, action)])
 
-                # standard Q-learning update for non-terminal states
-                max_next_q = max(Q[(next_state, a)] for a in range(9))
-                Q[(current_state, action)] += current_alpha * (reward + gamma * max_next_q - Q[(current_state, action)])
-
-        if episode % 5000 == 0:
+        if episode % 10000 == 0:
             print(f"Episode {episode}, alpha: {current_alpha:.4f}, epsilon: {current_epsilon:.4f}")
 
 
@@ -265,8 +275,11 @@ def test_agent(num_games=100):
         discard_pile = [deck.pop()] if deck else []
         game_over = False
 
+        players = [0, 1]
+        random.shuffle(players)
+        
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -361,7 +374,7 @@ def test_agent(num_games=100):
                     
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                    break
 
                 # RL Agent's turn ~ our hero
                 state = get_state(1, hands, revealed, discard_pile)
@@ -380,6 +393,7 @@ def test_agent(num_games=100):
 
                 if all(revealed[1]):
                     game_over = True
+                    break
 
         # Calculate final scores
         agent_score = sum(card[0] for card in hands[1])

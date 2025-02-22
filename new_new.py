@@ -12,68 +12,50 @@ BATCH_SIZE = 64
 GAMMA = 0.85
 EPSILON_START = 1.0
 EPSILON_END = 0.0001
-EPSILON_DECAY = 0.999
+EPSILON_DECAY = 0.99
 INITIAL_LR = 0.01
-LR_DECAY = 0.999
+LR_DECAY = 0.99
 MIN_LR = 0.0001
 TARGET_UPDATE = 25  # How often to update target network
 
 # Convert game state to tensor for neural network
 # Converts 5x12 tensor into a single vector of length 60
 def process_state(state):
-    hand, recent_discards, opponent_revealed, position_weights = state
     
-    # Calculate total size needed: 
-    # 4 cards (hand) + 3 cards (discard history) + 4 cards (opponent) + 4 positions = 15 positions
-    # Each card position has 12 possibilities (0-10 + unknown)
-    state_tensor = torch.zeros(15, 12)
+    hand, discard = state
+    # Create a state vector: 4 cards + 1 discard card, each has 12 possibilities (0-10 + unknown)
+    state_tensor = torch.zeros(5, 12)
     
-    # Encode hand cards (0-3)
+    # Encode hand cards
     for i, card_val in enumerate(hand):
         if card_val == -1:  # Unknown card
             state_tensor[i, 11] = 1
         else:  # Known card value 0-10
             state_tensor[i, card_val] = 1
     
-    # Encode recent discards (4-6)
-    for i, card_val in enumerate(recent_discards):
-        if card_val == -1:  # No card
-            state_tensor[i+4, 11] = 1
-        else:
-            state_tensor[i+4, card_val] = 1
-    
-    # Encode opponent revealed cards (7-10)
-    for i, card_val in enumerate(opponent_revealed):
-        if card_val == -1:  # Unknown card
-            state_tensor[i+7, 11] = 1
-        else:
-            state_tensor[i+7, card_val] = 1
-            
-    # Encode position weights (11-14)
-    # Normalize weights to 0-10 range and add to tensor
-    for i, weight in enumerate(position_weights):
-        weight_idx = min(int(weight * 10), 10)
-        state_tensor[i+11, weight_idx] = 1
+    # Encode discard card
+    if discard == -1:  # No discard
+        state_tensor[4, 11] = 1
+    else:
+        state_tensor[4, discard] = 1
     
     return state_tensor.flatten()
 
 class DQN(nn.Module):
+
     def __init__(self, input_size, hidden_size, output_size):
         super(DQN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, hidden_size//2)
-        self.fc4 = nn.Linear(hidden_size//2, output_size)
-        self.dropout = nn.Dropout(0.2)
+        self.fc3 = nn.Linear(hidden_size, hidden_size)
+        self.fc4 = nn.Linear(hidden_size, output_size)
         
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)
         x = F.relu(self.fc2(x))
-        x = self.dropout(x)
         x = F.relu(self.fc3(x))
         return self.fc4(x)
-    
+
 class ReplayMemory:
     # constructor initializes a double-ended queue with fixed maximum length
     def __init__(self, capacity):
@@ -101,49 +83,20 @@ class ReplayMemory:
     # used to check if we have enough experiences to start learning
     def __len__(self):
         return len(self.memory)
-    
-def initial_peek(peeked_cards, player):
-    """
-    Allow player to peek at their two adjacent cards (last two cards in hand)
-    This happens only once at the start of the game
-    """
-    # Record which cards were peeked at (positions 2 and 3)
-    peeked_cards[player][2] = True
-    peeked_cards[player][3] = True
 
 # get state information ~ agent hand (revealed or not) and top of discard
-def get_state(player, hands, revealed, peeked_cards, discard_pile):
-    # Basic hand state
+def get_state(player, hands, revealed, discard_pile):
     agent_hand = []
     for i in range(4):
         if revealed[player][i]:
             agent_hand.append(hands[player][i][0])
-        elif peeked_cards[player][i]:
-            agent_hand.append(hands[player][i][0])
         else:
             agent_hand.append(-1)
-            
-    # Recent discard history (last 3 cards)
-    recent_discards = []
-    for i in range(min(3, len(discard_pile))):
-        recent_discards.append(discard_pile[-(i+1)][0])
-    while len(recent_discards) < 3:
-        recent_discards.append(-1)
-        
-    # Opponent's revealed cards
-    opponent_revealed = []
-    for i in range(4):
-        if revealed[0][i]:  # opponent is player 0
-            opponent_revealed.append(hands[0][i][0])
-        else:
-            opponent_revealed.append(-1)
-            
-    # Position success weights
-    total_success = sum(position_success) or 1
-    position_weights = [p/total_success for p in position_success]
-    
-    return (tuple(agent_hand), tuple(recent_discards), 
-            tuple(opponent_revealed), tuple(position_weights))
+    if discard_pile:
+        discard_top = discard_pile[-1][0]
+    else:
+        discard_top = -1
+    return (tuple(agent_hand), discard_top)
 
 # select agent action based on max q value
 def select_action(state, policy_net, epsilon):
@@ -215,81 +168,57 @@ def deal_cards(deck, num_players):
     return hands, deck
 
 # updates decks (unknown + discrds) and hands
-def update_deck(card, discard_pile, revealed, peeked_cards, idx, player, hands):
-    """When a card is replaced, it becomes revealed and loses peeked status"""
-    # Card being replaced becomes revealed
-    revealed[player][idx] = True
-    # Remove peeked status since position is now revealed
-    peeked_cards[player][idx] = False
-    
+def update_deck(card, discard_pile, revealed, idx, player, hands):
+    if not revealed[player][idx]:
+        revealed[player][idx] = True
     discard_pile.append(hands[player][idx])
     hands[player][idx] = card
 
-# Global position tracking
-position_success = [0, 0, 0, 0]  # Success count for each position
+# expected value for hidden cards
+def card_counter(hands, revealed, discard_pile, deck):
 
-def update_position_success(old_value, new_value, position):
-    """Track successful card replacements"""
-    if new_value < old_value:  # Better card was placed
-        position_success[position] += 1
-    elif new_value > old_value:  # Worse card was placed
-        position_success[position] = max(0, position_success[position] - 1)
-
-# Estimate expected value for hidden cards
-def card_counter(hands, revealed, peeked_cards, discard_pile, deck):
-    
     if not deck:
         return 0
-    
+        
     # Sum up all observed card values
     observed_sum = 0
     
-    # Add up revealed and peeked cards in hands
+    # Add up revealed cards in hands
     for p in range(len(hands)):
         for i in range(len(hands[p])):
-            if revealed[p][i] or peeked_cards[p][i]:
+            if revealed[p][i]:
                 observed_sum += hands[p][i][0]
-    
-    # Add discard pile values            
+                
+    # Add discard pile values
     for card in discard_pile:
         observed_sum += card[0]
         
     # Calculate average value of remaining cards
     total_cards = len(deck)
-    expected_value = (total_cards - observed_sum) / total_cards
+    expected_value = (total_cards - observed_sum) / total_cards 
     
     return expected_value
 
+
 # rewards
-def calculate_reward(hands, revealed, player, peeked_cards, opponent_revealed, discard_pile, deck, position):
-    # Base reward from revealed cards
+def calculate_reward(hands, revealed, player, discard_pile, deck):
     current_sum = sum(hands[player][i][0] for i in range(4) if revealed[player][i])
-    
-    # Add expected value for hidden cards
-    num_hidden = sum(1 for i in range(4) if not revealed[player][i] and not peeked_cards[player][i])
+    # Add intermediate rewards based on card values
+    card_quality = sum(1 for card in hands[player] if card[0] == 0)  # Bonus for Kings
+    penalty = sum(1 for card in hands[player] if card[0] == 10)  # Penalty for Q/J
+
+    num_hidden = sum(1 for x in revealed[player] if not x)
     if num_hidden > 0:
-        expected_value = card_counter(hands, revealed, peeked_cards, discard_pile, deck)
+        expected_value = card_counter(hands, revealed, discard_pile, deck)
         current_sum += num_hidden * expected_value
-    
-    # Opponent awareness reward (kept from your version)
-    opponent_sum = sum(val for val in opponent_revealed if val != -1)
-    relative_performance = 0.2 * (opponent_sum - current_sum)
-    
-    # Position-based reward (kept from your version)
-    position_bonus = 0.1 * (position_success[position] / (sum(position_success) + 1))
-    
-    # King bonus and Face penalty (kept from your version)
-    king_bonus = sum(2 for i, card in enumerate(hands[player]) if card[0] == 0 and revealed[player][i])
-    face_penalty = sum(-1 for i, card in enumerate(hands[player]) if card[0] == 10 and revealed[player][i])
-    
-    # Combined reward
-    return -(current_sum + relative_performance) + position_bonus + king_bonus + face_penalty
+
+    return (-current_sum/40) + (card_quality * 0.5) - (penalty * 0.5)
 
 # training loop
 def train_dqn(episodes=10000):
     # Initialize networks and optimizer
-    input_size = 15 * 12  # 15 positions * 12 possibilities
-    hidden_size = 256 
+    input_size = 60  # 5 positions * 12 possibilities
+    hidden_size = 128 
     output_size = 9  # Number of possible actions
     
     # Policy network: Active student constantly learning and changing
@@ -300,37 +229,23 @@ def train_dqn(episodes=10000):
     # copies all the weights and parameters from the policy network to the target network.
     target_net.load_state_dict(policy_net.state_dict())
     
-    global position_success
-    position_success = [0, 0, 0, 0]
-    
     # adam optimizer
     optimizer = torch.optim.Adam(policy_net.parameters(), lr=INITIAL_LR)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     memory = ReplayMemory(MEMORY_SIZE)
     
     epsilon = EPSILON_START
-
-    # Store known card values for each player
-    #known_cards = {0: [], 1: []}  # Player -> [card1_value, card2_value]    
     
     for episode in tqdm(range(episodes)):
         reward = 0
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
         revealed = [[False] * 4 for i in range(2)]
-
-        # Separate tracking for peeked cards
-        peeked_cards = [[False, False, False, False], [False, False, False, False]]
-
-        # Do initial peek for both players
-        initial_peek(revealed, 0)
-        initial_peek(revealed, 1)
-
         discard_pile = [deck.pop()] if deck else []
         
         game_over = False
         episode_loss = 0
-        
+
         players = [0, 1]
         random.shuffle(players)
         
@@ -348,12 +263,12 @@ def train_dqn(episodes=10000):
                     if random.choice(['deck', 'discard']) == 'deck' and deck:
                         card = deck.pop()
                         if random.random() < 0.5 and discard_pile:
-                            update_deck(card, discard_pile, revealed,peeked_cards, random.randint(0, 3), 0, hands)
+                            update_deck(card, discard_pile, revealed, random.randint(0, 3), 0, hands)
                         else:
                             discard_pile.append(card)
                     elif discard_pile:
                         card = discard_pile.pop()
-                        update_deck(card, discard_pile, revealed,peeked_cards, random.randint(0, 3), 0, hands)
+                        update_deck(card, discard_pile, revealed, random.randint(0, 3), 0, hands)
                         
                     if all(revealed[0]):
                         game_over = True
@@ -371,33 +286,23 @@ def train_dqn(episodes=10000):
                         break  # Break out of the player loop since game is over
                 
                 # DQN Agent's turn
-                current_state = get_state(1, hands, revealed, peeked_cards, discard_pile)
+                current_state = get_state(1, hands, revealed, discard_pile)
                 action = select_action(current_state, policy_net, epsilon)
                 
                 # Execute action
                 if action < 5 and deck:  # Draw from deck
                     card = deck.pop()
                     if action < 4:
-                        # Store old value before updating
-                        old_value = hands[1][action][0] if revealed[1][action] else -1
-                        update_deck(card, discard_pile, revealed, peeked_cards, action, 1, hands)
-                        # Update position success
-                        update_position_success(old_value, card[0], action)
+                        update_deck(card, discard_pile, revealed, action, 1, hands)
                     else:
                         discard_pile.append(card)
                 elif action >= 5 and discard_pile:  # Draw from discard
                     card = discard_pile.pop()
-                    position = action-5
-                    old_value = hands[1][position][0] if revealed[1][position] else -1
-                    update_deck(card, discard_pile, revealed, peeked_cards, position, 1, hands)
-                    update_position_success(old_value, card[0], position)
-                
-                # Get opponent revealed cards for reward calculation
-                opponent_revealed = [hands[0][i][0] if revealed[0][i] else -1 for i in range(4)]
+                    update_deck(card, discard_pile, revealed, action-5, 1, hands)
                 
                 # Get reward and next state
-                reward = calculate_reward(hands, revealed, 1, peeked_cards, opponent_revealed,  discard_pile, deck, action if action < 4 else (action-5 if action >= 5 else -1))
-                next_state = get_state(1, hands, revealed, peeked_cards, discard_pile)
+                reward = calculate_reward(hands, revealed, 1, discard_pile, deck)
+                next_state = get_state(1, hands, revealed, discard_pile)
                 
                 # Check if game is over
                 done = all(revealed[1]) or not deck
@@ -414,6 +319,7 @@ def train_dqn(episodes=10000):
                 loss = optimize_model(policy_net, target_net, memory, optimizer)
                 if loss is not None:
                     episode_loss += (loss - episode_loss)/episode
+
                     if optimizer.param_groups[0]['lr'] > MIN_LR:
                         scheduler.step()
         
@@ -436,25 +342,14 @@ def test_dqn(policy_net, num_games=100):
     wins = 0
     total_score = 0
     total_opponent_score = 0
-
-    # Store known card values for each player
-    #known_cards = {0: [], 1: []}  # Player -> [card1_value, card2_value]  
     
     for game in range(num_games):
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
         revealed = [[False] * 4 for i in range(2)]
-
-        peeked_cards = [[False] * 4 for i in range(2)]
-
-
-        # Do initial peek for both players
-        initial_peek( revealed, 0)
-        initial_peek( revealed, 1)
-
         discard_pile = [deck.pop()] if deck else []
         game_over = False
-        
+
         players = [0, 1]
         random.shuffle(players)
         
@@ -490,13 +385,13 @@ def test_dqn(policy_net, num_games=100):
                             # Replace a hidden card if available
                             if hidden_indices:
                                 idx = random.choice(hidden_indices)
-                                update_deck(card, discard_pile, revealed, peeked_cards, idx, player, hands)
+                                update_deck(card, discard_pile, revealed, idx, player, hands)
                             else:
                                 # No hidden cards, replace highest revealed card
-                                update_deck(card, discard_pile, revealed, peeked_cards, highest_revealed_idx, player, hands)
+                                update_deck(card, discard_pile, revealed,  highest_revealed_idx, player, hands)
                         else:
                             # Replace highest revealed card
-                            update_deck(card, discard_pile, revealed, peeked_cards, highest_revealed_idx, player, hands)
+                            update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
                     
                     else:
                         # Rule 2: Draw from deck if discard >= 5
@@ -518,7 +413,7 @@ def test_dqn(policy_net, num_games=100):
                                     break
                             
                             if found_higher:
-                                update_deck(card, discard_pile, revealed, peeked_cards, replace_idx, player, hands)
+                                update_deck(card, discard_pile, revealed, replace_idx, player, hands)
                             else:
                                 # Discard if no higher card found
                                 discard_pile.append(card)
@@ -538,11 +433,11 @@ def test_dqn(policy_net, num_games=100):
                             
                             if highest_revealed_value > card[0]:
                                 # Replace highest revealed card
-                                update_deck(card, discard_pile, revealed, peeked_cards, highest_revealed_idx, player, hands)
+                                update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
                             elif hidden_indices:
                                 # Replace a random hidden card
                                 idx = random.choice(hidden_indices)
-                                update_deck(card, discard_pile, revealed, peeked_cards, idx, player, hands)
+                                update_deck(card, discard_pile, revealed, idx, player, hands)
                             else:
                                 # No good replacement options, discard
                                 discard_pile.append(card)
@@ -552,18 +447,18 @@ def test_dqn(policy_net, num_games=100):
                     break
                 
                 # DQN Agent's turn
-                state = get_state(1, hands, revealed, peeked_cards, discard_pile)
+                state = get_state(1, hands, revealed, discard_pile)
                 action = select_action(state, policy_net, 0)  # No exploration during testing
                 
                 if action < 5 and deck:
                     card = deck.pop()
                     if action < 4:
-                        update_deck(card, discard_pile, revealed, peeked_cards, action, 1, hands)
+                        update_deck(card, discard_pile, revealed, action, 1, hands)
                     else:
                         discard_pile.append(card)
                 elif action >= 5 and discard_pile:
                     card = discard_pile.pop()
-                    update_deck(card, discard_pile, revealed,peeked_cards,  action-5, 1, hands)
+                    update_deck(card, discard_pile, revealed, action-5, 1, hands)
                 
                 if all(revealed[1]):
                     game_over = True
@@ -581,5 +476,5 @@ def test_dqn(policy_net, num_games=100):
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=100001)
+policy_net = train_dqn(episodes=1001)
 test_dqn(policy_net, num_games=1000)

@@ -9,14 +9,14 @@ import torch.nn.functional as F
 # Hyperparameters
 MEMORY_SIZE = 100000
 BATCH_SIZE = 64
-GAMMA = 0.9
+GAMMA = 0.85
 EPSILON_START = 1.0
-EPSILON_END = 0.0
-EPSILON_DECAY = 0.9
+EPSILON_END = 0.0001
+EPSILON_DECAY = 0.999
 INITIAL_LR = 0.01
 LR_DECAY = 0.99
 MIN_LR = 0.0001
-TARGET_UPDATE = 10  # How often to update target network
+TARGET_UPDATE = 25  # How often to update target network
 
 # Convert game state to tensor for neural network
 # Converts 5x12 tensor into a single vector of length 60
@@ -174,13 +174,45 @@ def update_deck(card, discard_pile, revealed, idx, player, hands):
     discard_pile.append(hands[player][idx])
     hands[player][idx] = card
 
+# expected value for hidden cards
+def card_counter(hands, revealed, discard_pile, deck):
+
+    if not deck:
+        return 0
+        
+    # Sum up all observed card values
+    observed_sum = 0
+    
+    # Add up revealed cards in hands
+    for p in range(len(hands)):
+        for i in range(len(hands[p])):
+            if revealed[p][i]:
+                observed_sum += hands[p][i][0]
+                
+    # Add discard pile values
+    for card in discard_pile:
+        observed_sum += card[0]
+        
+    # Calculate average value of remaining cards
+    total_cards = len(deck)
+    expected_value = (total_cards - observed_sum) / total_cards 
+    
+    return expected_value
+
+
 # rewards
-def calculate_reward(hands, revealed, player):
+def calculate_reward(hands, revealed, player, discard_pile, deck):
     current_sum = sum(hands[player][i][0] for i in range(4) if revealed[player][i])
     # Add intermediate rewards based on card values
     card_quality = sum(1 for card in hands[player] if card[0] == 0)  # Bonus for Kings
     penalty = sum(1 for card in hands[player] if card[0] == 10)  # Penalty for Q/J
-    return (-current_sum/40) + (card_quality * 0.5) - (penalty * 0.3)
+
+    num_hidden = sum(1 for x in revealed[player] if not x)
+    if num_hidden > 0:
+        expected_value = card_counter(hands, revealed, discard_pile, deck)
+        current_sum += num_hidden * expected_value
+
+    return (-current_sum/40) + (card_quality * 0.5) - (penalty * 0.5)
 
 # training loop
 def train_dqn(episodes=10000):
@@ -205,6 +237,7 @@ def train_dqn(episodes=10000):
     epsilon = EPSILON_START
     
     for episode in tqdm(range(episodes)):
+        reward = 0
         deck = generate_deck()
         hands, deck = deal_cards(deck, 2)
         revealed = [[False] * 4 for i in range(2)]
@@ -212,9 +245,12 @@ def train_dqn(episodes=10000):
         
         game_over = False
         episode_loss = 0
+
+        players = [0, 1]
+        random.shuffle(players)
         
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -236,7 +272,18 @@ def train_dqn(episodes=10000):
                         
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                        agent_score = sum(card[0] for card in hands[1])
+                        opponent_score = sum(card[0] for card in hands[0])
+                        reward += 5.0 if agent_score < opponent_score else -5.0
+
+                        # Store transition in memory
+                        memory.push(current_state, action, reward, next_state, done)
+                        
+                        # Optimize model
+                        loss = optimize_model(policy_net, target_net, memory, optimizer)
+                        if loss is not None:
+                            episode_loss += (loss - episode_loss)/episode
+                        break  # Break out of the player loop since game is over
                 
                 # DQN Agent's turn
                 current_state = get_state(1, hands, revealed, discard_pile)
@@ -254,7 +301,7 @@ def train_dqn(episodes=10000):
                     update_deck(card, discard_pile, revealed, action-5, 1, hands)
                 
                 # Get reward and next state
-                reward = calculate_reward(hands, revealed, 1)
+                reward = calculate_reward(hands, revealed, 1, discard_pile, deck)
                 next_state = get_state(1, hands, revealed, discard_pile)
                 
                 # Check if game is over
@@ -263,7 +310,7 @@ def train_dqn(episodes=10000):
                     game_over = True
                     agent_score = sum(card[0] for card in hands[1])
                     opponent_score = sum(card[0] for card in hands[0])
-                    reward = 1.0 if agent_score < opponent_score else -1.0
+                    reward += 5.0 if agent_score < opponent_score else -5.0
                 
                 # Store transition in memory
                 memory.push(current_state, action, reward, next_state, done)
@@ -302,9 +349,13 @@ def test_dqn(policy_net, num_games=100):
         revealed = [[False] * 4 for i in range(2)]
         discard_pile = [deck.pop()] if deck else []
         game_over = False
+
+        # Randomly decide who goes first
+        players = [0, 1]
+        random.shuffle(players)
         
         while not game_over:
-            for player in range(2):
+            for player in players:
                 if game_over:
                     break
                 
@@ -321,7 +372,7 @@ def test_dqn(policy_net, num_games=100):
                     
                     if all(revealed[0]):
                         game_over = True
-                    continue
+                    break
                 
                 # DQN Agent's turn
                 state = get_state(1, hands, revealed, discard_pile)
@@ -353,5 +404,5 @@ def test_dqn(policy_net, num_games=100):
     print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=1001)
+policy_net = train_dqn(episodes=2001)
 test_dqn(policy_net, num_games=1000)
