@@ -12,9 +12,9 @@ Folder structure is as follows:
 │   ├── dqn_test.py         # DQN testing code
 │   └── dqn_golf.py         # DQN training code
 │
-├── models/                   # Create this folder for saved models
+├── models/                   # this folder for saved models
 │   ├── dqn_10k.pth       # Trained for 10k episodes
-│   |── dqn_100k.pth      # Trained for 100k episodes
+│   |── dqn_100k.pth      # Trained for 100k episodes (example)
 
 │
 ├── data/                     # For any game data or statistics
