@@ -24,9 +24,9 @@ Folder structure is as follows:
 └── README.md                 # Add documentation about your project
 ```
 
-DQN on golf game 
-    - To train DQN model run `python src/dqn_golf.py`
-    - To test against smart (evil) player run `python src/dqn_test.py`
+DQN on golf game
+- To train DQN model run `python src/dqn_golf.py`
+- To test against smart (evil) player run `python src/dqn_test.py`
 
 `dqn_golf.py` has the best the NN architecture. In this code, the trained model is being saved as `.pth` file in `models` folder, which is used in `dqn_test.py` file for testing. By compartmentalizing our procedures like this we can work on testing and training more efficiently.
 
