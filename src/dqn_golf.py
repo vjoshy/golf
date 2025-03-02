@@ -1,4 +1,5 @@
-# random train vs rule based
+# Deep Q-Network on GOLF
+# Trained against a player that makes random moves 
 
 import numpy as np
 import random
@@ -11,12 +12,12 @@ import torch.nn.functional as F
 # Hyperparameters
 MEMORY_SIZE = 100000
 BATCH_SIZE = 64
-GAMMA = 0.85
+GAMMA = 0.85 # discount factor
 EPSILON_START = 1.0
 EPSILON_END = 0.0001
-EPSILON_DECAY = 0.99
+EPSILON_DECAY = 0.99 # epsilon decay rate
 INITIAL_LR = 0.01
-LR_DECAY = 0.99
+LR_DECAY = 0.99 # learning rate decay rate
 MIN_LR = 0.0001
 TARGET_UPDATE = 25  # How often to update target network
 
@@ -43,21 +44,25 @@ def process_state(state):
     
     return state_tensor.flatten()
 
+# intialize neural network 
 class DQN(nn.Module):
 
+    # linear layer
     def __init__(self, input_size, hidden_size, output_size):
         super(DQN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, hidden_size)
         self.fc4 = nn.Linear(hidden_size, output_size)
-        
+    
+    # forward pass function - Activation Function used is ReLu 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         return self.fc4(x)
 
+# essentially a storage mechanism that holds the agent's past experiences during gameplay. 
 class ReplayMemory:
     # constructor initializes a double-ended queue with fixed maximum length
     def __init__(self, capacity):
@@ -66,14 +71,11 @@ class ReplayMemory:
     # Adds a new experience to memory
     # takes 5 parameters that represent one complete interaction
     # stores them as a tuple in memory
-    """ 
-    state: Current state (hand and discard card)
-    action: What the agent did (0-8)
-    reward: reward for that action
-    next_state: next state
-    done: if the game ended 
-    """
-
+    # state: Current state (hand and discard card)
+    # action: What the agent did (0-8)
+    # reward: reward for that action
+    # next_state: next state
+    # done: if the game ended 
     def push(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
         
@@ -107,10 +109,12 @@ def select_action(state, policy_net, epsilon):
     else:
         with torch.no_grad():
             state_tensor = process_state(state) # one hot encode state
-            return policy_net(state_tensor).argmax().item()
+            return policy_net(state_tensor).argmax().item() # max q value
 
 # target net is the older copy of network for stable training
-
+# this function implements the core DQN algorithm that allows your agent to learn from its experiences.
+# It takes random samples from memory, calculates what the agent should have done (based on rewards and future states), 
+# compares that to what it actually did, and updates the network to reduce the difference.
 def optimize_model(policy_net, target_net, memory, optimizer):
     if len(memory) < BATCH_SIZE:
         return
@@ -119,6 +123,7 @@ def optimize_model(policy_net, target_net, memory, optimizer):
     transitions = memory.sample(BATCH_SIZE)
     
     # transpose the batch and store as list
+    # reorganizes the data from a list of experience tuples into separate lists for each component
     # [(s1,a1,r1,s1',d1), (s2,a2,r2,s2',d2)...] to  [(s1,s2...), (a1,a2...), (r1,r2...)...]
     batch = list(zip(*transitions))
     
@@ -135,6 +140,7 @@ def optimize_model(policy_net, target_net, memory, optimizer):
     
     # compute next Q values using target network
     # calls `forward` implicitly
+    # Uses the target network (more stable version of the policy network) to find the maximum Q-value for each next state.
     with torch.no_grad():
         next_q_values = target_net(next_state_batch).max(1)[0]
     
@@ -205,23 +211,25 @@ def card_counter(hands, revealed, discard_pile, deck):
 # rewards
 def calculate_reward(hands, revealed, player, discard_pile, deck):
     current_sum = sum(hands[player][i][0] for i in range(4) if revealed[player][i])
-    # Add intermediate rewards based on card values
+
+    # Add intermediate rewards based on card values ~ I'm not convinced these do anything
     card_quality = sum(1 for card in hands[player] if card[0] == 0)  # Bonus for Kings
     penalty = sum(1 for card in hands[player] if card[0] == 10)  # Penalty for Q/J
 
+    # incorporates expected value of hidden cards by counting cards
     num_hidden = sum(1 for x in revealed[player] if not x)
     if num_hidden > 0:
         expected_value = card_counter(hands, revealed, discard_pile, deck)
         current_sum += num_hidden * expected_value
-
+        
     return (-current_sum/40) + (card_quality * 0.5) - (penalty * 0.5)
 
 # training loop
 def train_dqn(episodes=10000):
     # Initialize networks and optimizer
     input_size = 60  # 5 positions * 12 possibilities
-    hidden_size = 128 
-    output_size = 9  # Number of possible actions
+    hidden_size = 128  # number of neurons in each layer
+    output_size = 9  # Number of possible actions 
     
     # Policy network: Active student constantly learning and changing
     # Target network: Teacher who updates their knowledge periodically but maintains stability
@@ -233,11 +241,14 @@ def train_dqn(episodes=10000):
     
     # adam optimizer
     optimizer = torch.optim.Adam(policy_net.parameters(), lr=INITIAL_LR)
+
+    # exponential decay scheduler for learning rate
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=LR_DECAY)
     memory = ReplayMemory(MEMORY_SIZE)
     
     epsilon = EPSILON_START
     
+    # training loop
     for episode in tqdm(range(episodes)):
         reward = 0
         deck = generate_deck()
@@ -256,7 +267,7 @@ def train_dqn(episodes=10000):
                 if game_over:
                     break
                 
-                # Computer opponent's turn
+                # Computer opponent's turn ~ random player
                 if player == 0:
                     if not deck:
                         game_over = True
@@ -272,7 +283,7 @@ def train_dqn(episodes=10000):
                         card = discard_pile.pop()
                         update_deck(card, discard_pile, revealed, random.randint(0, 3), 0, hands)
                         
-                    if all(revealed[0]):
+                    if all(revealed[0]): # check to see if game ends
                         game_over = True
                         agent_score = sum(card[0] for card in hands[1])
                         opponent_score = sum(card[0] for card in hands[0])
@@ -335,154 +346,26 @@ def train_dqn(episodes=10000):
         # Decay epsilon
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
         
-        if episode % 500 == 0:
+        if episode % 50000 == 0:
             print(f"Episode {episode}, Loss: {episode_loss:.4f}, Epsilon: {epsilon:.4f}, LR: {optimizer.param_groups[0]['lr']:.4f}")
     
     return policy_net
 
-def test_dqn(policy_net, num_games=100):
-    wins = 0
-    total_score = 0
-    total_opponent_score = 0
-
-    opp_end = 0
-    agent_end = 0
+# Save the trained DQN model to a file
+def save_model(model, filename="golf_dqn_model.pth"):
+    # Parameters:
+    # model (nn.Module): The trained DQN model
+    # filename (str): Path to save the model
     
-    for game in range(num_games):
-        deck = generate_deck()
-        hands, deck = deal_cards(deck, 2)
-        revealed = [[False] * 4 for i in range(2)]
-        discard_pile = [deck.pop()] if deck else []
-        game_over = False
+    torch.save(model.state_dict(), filename)
+    print(f"Model saved to {filename}")
 
-        players = [0, 1]
-        random.shuffle(players)
-        
-        while not game_over:
-            for player in players:
-                if game_over:
-                    break
-                
-                if player == 0:  # Computer opponent
-                    
-                    # Rule 1: Check discard pile top card
-                    discard_value = discard_pile[-1][0]
-                    
-                    if discard_value < 10:
-                        # Draw from discard pile
-                        card = discard_pile.pop()
-                        
-                        # Find highest revealed card or pick hidden card
-                        highest_revealed_idx = -1
-                        highest_revealed_value = -1
-                        hidden_indices = []
-                        
-                        for i in range(4):
-                            if revealed[player][i]:
-                                if hands[player][i][0] > highest_revealed_value:
-                                    highest_revealed_value = hands[player][i][0]
-                                    highest_revealed_idx = i
-                            else:
-                                hidden_indices.append(i)
-                        
-                        # Rule 4: If card is less than 5 and not less than revealed cards
-                        if highest_revealed_value == -1 or card[0] >= highest_revealed_value:
-                            # Replace a hidden card if available
-                            if hidden_indices:
-                                idx = random.choice(hidden_indices)
-                                update_deck(card, discard_pile, revealed, idx, player, hands)
-                            else:
-                                # No hidden cards, replace highest revealed card
-                                update_deck(card, discard_pile, revealed,  highest_revealed_idx, player, hands)
-                        else:
-                            # Replace highest revealed card
-                            update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
-                    
-                    else:
-                        # Rule 2: Draw from deck if discard >= 5
-                        if not deck:
-                            game_over = True
-                            break
 
-                        card = deck.pop()
-                        
-                        # Rule 3: Handle card drawn from deck
-                        if card[0] > 10:
-                            # Find if there's a higher revealed card to replace
-                            found_higher = False
-                            replace_idx = -1
-                            for i in range(4):
-                                if revealed[player][i] and hands[player][i][0] > card[0]:
-                                    found_higher = True
-                                    replace_idx = i
-                                    break
-                            
-                            if found_higher:
-                                update_deck(card, discard_pile, revealed, replace_idx, player, hands)
-                            else:
-                                # Discard if no higher card found
-                                discard_pile.append(card)
-                        else:
-                            # Card is <= 5, try to replace highest revealed card or hidden card
-                            highest_revealed_idx = -1
-                            highest_revealed_value = -1
-                            hidden_indices = []
-                            
-                            for i in range(4):
-                                if revealed[player][i]:
-                                    if hands[player][i][0] > highest_revealed_value:
-                                        highest_revealed_value = hands[player][i][0]
-                                        highest_revealed_idx = i
-                                else:
-                                    hidden_indices.append(i)
-                            
-                            if highest_revealed_value > card[0]:
-                                # Replace highest revealed card
-                                update_deck(card, discard_pile, revealed, highest_revealed_idx, player, hands)
-                            elif hidden_indices:
-                                # Replace a random hidden card
-                                idx = random.choice(hidden_indices)
-                                update_deck(card, discard_pile, revealed, idx, player, hands)
-                            else:
-                                # No good replacement options, discard
-                                discard_pile.append(card)
-                    
-                    if all(revealed[0]):
-                        game_over = True
-                        opp_end += 1 
-                        break
-                
-                # DQN Agent's turn
-                state = get_state(1, hands, revealed, discard_pile)
-                action = select_action(state, policy_net, 0)  # No exploration during testing
-                
-                if action < 5 and deck:
-                    card = deck.pop()
-                    if action < 4:
-                        update_deck(card, discard_pile, revealed, action, 1, hands)
-                    else:
-                        discard_pile.append(card)
-                elif action >= 5 and discard_pile:
-                    card = discard_pile.pop()
-                    update_deck(card, discard_pile, revealed, action-5, 1, hands)
-                
-                if all(revealed[1]):
-                    game_over = True
-                    agent_end += 1
-        
-        agent_score = sum(card[0] for card in hands[1])
-        opponent_score = sum(card[0] for card in hands[0])
-        total_score += agent_score
-        total_opponent_score += opponent_score
-        
-        if agent_score < opponent_score:
-            wins += 1
-    
-    print(f"Average score over {num_games} games: {total_score/num_games:.2f}")
-    print(f"Averag Opps score: {total_opponent_score/num_games:.2f}")
-    print(f"Win rate: {wins}/{num_games} ({(wins/num_games)*100:.2f}%)")
-    print(f"Opp revealed: {opp_end}, agent revealed: {agent_end}")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=2001)
-test_dqn(policy_net, num_games=1000)
+policy_net = train_dqn(episodes=10001)
+
+save_model(policy_net, "models/dqn_golf_1k.pth") 
+
+
+

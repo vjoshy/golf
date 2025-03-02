@@ -555,7 +555,7 @@ def test_dqn(policy_net, num_games=100):
                     if all(revealed[0]):
                         game_over = True
                         opp_end += 1
-                    break
+                        break
                 
                 # DQN Agent's turn
                 state = get_state(1, hands, revealed, peeked_cards, discard_pile)
@@ -589,5 +589,5 @@ def test_dqn(policy_net, num_games=100):
     print(f"Opp revealed: {opp_end}, agent revealed: {agent_end}")
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=1001)
+policy_net = train_dqn(episodes=2001)
 test_dqn(policy_net, num_games=1000)
