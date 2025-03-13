@@ -262,6 +262,6 @@ def test_dqn(policy_net, num_games=100):
     print(f"Opp revealed: {opp_end}, agent revealed: {agent_end}")
 
 
-policy_net = load_model("models/dqn_golf_10k.pth")
+policy_net = load_model("models/dqn_golf_1k.pth")
 
 test_dqn(policy_net, num_games=1000)

@@ -203,7 +203,8 @@ def card_counter(hands, revealed, discard_pile, deck):
         
     # Calculate average value of remaining cards
     total_cards = len(deck)
-    expected_value = (total_cards - observed_sum) / total_cards 
+    total_sum = 4 * (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 10 + 10 + 0)
+    expected_value = (total_sum - observed_sum) / total_cards 
     
     return expected_value
 
@@ -363,7 +364,7 @@ def save_model(model, filename="golf_dqn_model.pth"):
 
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=10001)
+policy_net = train_dqn(episodes=1001)
 
 save_model(policy_net, "models/dqn_golf_1k.pth") 
 
