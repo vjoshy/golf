@@ -1,0 +1,408 @@
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+import itertools
+
+def generate_deck():
+    values = list(range(1, 11)) + [10, 10, 0]  # 1-10, J=10, Q=10, K=0
+    suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
+    deck = []
+    for value in values:
+        for suit in suits:
+            deck.append((value, suit)) 
+    return deck
+
+
+def deal_cards(deck, num_players):
+    random.shuffle(deck)
+    hands = []
+    for i in range(num_players):
+        hand = []
+        for j in range(4): # Deal 4 cards per player
+            hand.append(deck.pop())
+        hands.append(hand)
+    return hands, deck
+
+
+def game_setup():
+    deck = generate_deck()
+    hands, deck = deal_cards(deck, 2)
+    revealed = [[False, False, False, False], [False, False, False, False] ] # start with all cards unrevealed 
+    discard_pile = [deck.pop()] if deck else [] # pull top card
+    game_over = False
+    return deck,discard_pile,revealed,hands,game_over
+
+
+def update_deck(card, discard_pile, revealed, idx, player, hands):
+    if not revealed[player][idx]:
+        revealed[player][idx] = True
+    discard_pile.append(hands[player][idx])
+    hands[player][idx] = card
+
+
+def get_state(player, hands, revealed, discard_pile):   
+    agent_hand = []
+    for i in range(4): 
+        if revealed[player][i]: # obtain revealed card values
+            agent_hand.append(hands[player][i][0])
+        else:
+            agent_hand.append(-1)
+    if discard_pile: 
+        discard_top = discard_pile[-1][0] # card from top of discard pile
+    else:
+        discard_top = -1 
+    return (tuple(agent_hand), discard_top) # current state
+
+
+def compute_potential_state(action, deck, discard_pile, revealed, hands):
+    potential_hand=[card[0] for card in hands[1]]
+    potential_revealed=np.copy(revealed[1])  
+    potential_discard=discard_pile[0]                
+    for idx in range(len(potential_hand)):
+        if not deck:
+            game_over=True
+            break
+        if action<4: # replace with card from deck            
+            potential_hand[idx]=deck[0][0]# top of deck
+            potential_revealed[idx]=True           
+            potential_discard=discard_pile[0]
+            break
+        elif action>5:
+            potential_hand[idx]=discard_pile[0][0]
+            potential_revealed[idx]=True
+            potential_discard=random.choice(discard_pile) # check
+            break
+    for idx in range(len(potential_hand)):
+        if not potential_revealed[idx]:
+            potential_hand[idx]=-1
+    potential_state=tuple(potential_hand), potential_discard[0]
+    return potential_state
+
+
+def opponent_turn(deck,discard_pile,revealed,hands):
+    loop=True
+    game_over=False
+    while loop==True:    
+        if not deck: # stop game when deck is empty
+            game_over=True
+            break
+        draw_action = random.choice(['deck', 'discard'])
+        if draw_action == 'deck': # choose card from deck
+            if not deck:
+                game_over=True
+                break
+            card = deck.pop()
+
+            if random.random() < 0.5 and discard_pile:
+                idx = random.randint(0, 3)
+                update_deck(card, discard_pile, revealed, idx, 0, hands)
+            else:
+                discard_pile.append(card)
+        else:
+            card = discard_pile.pop()
+            idx = random.randint(0, 3)
+            update_deck(card, discard_pile, revealed, idx, 0, hands)
+        
+        if all(revealed[0]):
+            game_over=True
+            break 
+        loop=False
+    op_hand = []
+    for i in range(4): 
+        if revealed[0][i]: # obtain revealed card values
+            op_hand.append(hands[0][i][0])
+        else:
+            op_hand.append(-1)
+
+    return op_hand, game_over
+
+
+def get_action(epsilon,params, deck, discard_pile, revealed, hands):
+    if random.random() < epsilon: # choose random float btw 0 and 1
+        return random.randint(0, 8) # if less than epsilon, choose random action (exploration)
+    
+    q_vals=np.zeros(9)
+    for action in range(9):       
+        potential_state=compute_potential_state(action, deck, discard_pile, revealed, hands)
+        q_vals[action],_=q_function(params,potential_state)
+    
+    max_q=np.max(q_vals)
+    best_actions=np.where(q_vals==max_q)[0]
+    action=np.random.choice(best_actions)
+    # action=np.argmax(q_vals) # action that results in highest q val   
+    return action
+
+
+def compute_next_state(action,deck,discard_pile,revealed,hands):
+    game_over=False
+    loop=True
+    while loop==True:
+        if action < 5:  
+            if not deck:
+                game_over=True
+                break               
+            card = deck.pop()
+            # replace card
+            if action < 4:  
+                update_deck(card, discard_pile, revealed, action, 1, hands)
+            else:  # discard
+                discard_pile.append(card)
+        else: 
+            # Draw from discard
+            if not discard_pile:
+                game_over=True
+                break
+            card = discard_pile.pop()
+            idx = action - 5
+            update_deck(card, discard_pile, revealed, idx, 1, hands) 
+        loop=False
+    next_state=get_state(1, hands, revealed, discard_pile)
+    if all(revealed[0]) or all (revealed[1]):
+        game_over = True
+    return next_state,game_over
+
+
+# treating unrevealed cards as 6
+def q_function(params,hand):
+    features=np.zeros(len(params))
+    vals=np.array(hand[0])
+    expected_vals=np.where(vals==-1,6,vals)/10
+    discard=hand[1]
+
+    # State Features
+    for card_idx in range(4):
+        val=expected_vals[card_idx]
+        if val<=0.3: features[3*card_idx]=1 # low
+        elif 0.4<=val<=0.7: features[3*card_idx+1]=1 # med
+        else: features[3*card_idx+2]=1 # high
+    
+    if discard<=0.3: features[12]=1
+    elif 0.4<=discard<=0.7: features[13]=1
+    else: features[14]=1
+
+    q=np.dot(features,params)
+    grad_q=features
+    return q,grad_q
+
+
+'''def q_function(params,hand):
+    features=np.zeros(len(params))
+    vals=np.array(hand[0])
+    revealed=np.where(vals==-1,0,1) 
+    discard=hand[1]
+
+    # State Features
+    for card_idx in range(4):
+        val=vals[card_idx]
+        if revealed[card_idx]==1: # revealed
+            if val<=3: features[4*card_idx+1]=1 # low
+            elif 4<=val<=7: features[4*card_idx+2]=1 # med
+            else: features[4*card_idx+3]=1 # high
+        else: # not revealed
+            features[4*card_idx]=1
+    
+    if discard<=3: features[16]=1
+    elif 4<=discard<=7: features[17]=1
+    else: features[18]=1
+
+    # Action Features - look into this
+    q=np.dot(features,params)
+    grad_q=features
+    return q,grad_q'''
+
+# Chat
+
+def calculate_reward(state, next_state, revealed):
+    old_hand = np.array(state[0])
+    new_hand = np.array(next_state[0])
+
+    if np.array_equal(old_hand, new_hand):
+        return 0  # No change, no reward
+    
+    changed_card_idx = np.where(new_hand != old_hand)[0]
+    if len(changed_card_idx) == 0:
+        return 0  # Edge case: No detected change
+
+    # Estimate unseen cards as 6
+    old_hand = np.where(old_hand == -1, 6, old_hand)
+    new_hand = np.where(new_hand == -1, 6, new_hand)
+
+    # Compute difference in hand sum
+    reward = np.sum(old_hand) - np.sum(new_hand)
+
+    return reward   # Normalize?
+
+'''def calculate_reward(state,next_state,revealed):
+    old_hand=np.array(state[0])
+    new_hand=np.array(next_state[0]) 
+    if np.array_equal(old_hand,new_hand):
+        reward=0  
+    else:  
+        changed_card_idx=np.where(new_hand!=old_hand)[0]
+        if old_hand[changed_card_idx]==-1:
+            old_hand[changed_card_idx]=6
+
+        hand_diff=old_hand[changed_card_idx]-new_hand[changed_card_idx]
+
+        if hand_diff>0:
+            reward=1
+        elif hand_diff<0:
+            reward=-1
+        else:
+            reward=0
+    return reward'''
+
+
+def calculate_term_reward(hands):
+    op_vals=[num for num,suit in hands[0]]
+    agent_vals=[num for num,suit in hands[1]]
+    op_sum=sum(op_vals)
+    agent_sum=sum(agent_vals)
+    if agent_sum<op_sum:
+        term_reward=10    
+    elif agent_sum>op_sum:
+        term_reward=-10
+    else:
+        term_reward=0
+    return term_reward
+
+
+def generate_episode(epsilon,params):
+    deck,discard_pile,revealed,hands,game_over=game_setup()
+    current_player = (random.random()<0.5) + 1
+
+    state_history=[]
+    reward_history=[]
+
+    while game_over==False:
+        if current_player==1:
+            # get current state
+            state=get_state(current_player, hands, revealed, discard_pile)
+            state_history.append(state)
+            # choose action (fix)
+            action=get_action(epsilon,params, deck, discard_pile, revealed, hands)           
+            # get new state
+            new_state,game_over=compute_next_state(action,deck,discard_pile,revealed,hands)            
+            # get reward             
+            reward=0                     
+            # reward=calculate_reward(state,new_state,revealed)
+            reward_history.append(reward)
+        else:
+            op_state,game_over=opponent_turn(deck,discard_pile,revealed,hands)
+
+        current_player=3-current_player
+    
+    # Game over
+    state_history.append(new_state)
+    terminal_reward=calculate_term_reward(hands)
+    reward_history.append(terminal_reward)
+    return state_history, reward_history
+
+
+def train_agent():
+    alpha=0.001
+    epsilon=0.5
+    gamma = 0.9
+
+    # num_params=19
+    num_params=15
+    # num_params=5
+
+    episodes=1_000_000
+    # params=np.zeros(num_params)
+    params=np.random.uniform(-0.1, 0.1, size=num_params)
+    
+    # params=np.ones(num_params)
+
+
+    loss=np.zeros(episodes)
+    total_return=np.zeros(episodes)
+    epsilon_vec=np.zeros(episodes)
+    avg_returns=np.zeros(episodes)
+    avg_apprx_returns=np.zeros(episodes)
+
+    for episode in range(episodes):
+        epsilon = max(epsilon * 0.999, 0.001) 
+
+        states,rewards=generate_episode(epsilon,params)
+        tmax=len(states)
+
+        apprx_returns=np.zeros(tmax+1)
+        epsilon_vec[episode]=epsilon
+        total_return[episode]=sum(rewards)
+        returns_per_state=np.zeros(tmax+1)
+
+        for t in range(tmax):
+            state=states[t]
+            for t in range(tmax):
+                G = 0
+                for k in range(t, tmax):  
+                    G += (gamma ** (k - t)) * rewards[k]
+                       
+            # G=np.sum(rewards[t:tmax]) 
+
+            value,grad_value=q_function(params,state)
+            params+=alpha*(G-value)*grad_value
+
+            returns_per_state[t]=G
+            apprx_returns[t]=value
+
+        avg_returns[episode]=np.mean(returns_per_state)
+        avg_apprx_returns[episode]=np.mean(apprx_returns)
+        loss=(avg_returns-avg_apprx_returns)**2
+
+        if episode%1000==0:
+            # print(f"{episode=}")
+            # print(f"{params=}")
+            avg_win_rate = np.mean(total_return[max(0, episode-1000):episode])
+            print(f"Episode {episode}, Avg Win Rate (last 1000): {avg_win_rate:.2f}")
+    return params,total_return,epsilon_vec,loss
+
+
+def test_agent(params,num_games):
+    epsilon=0
+
+    wins=0
+    for episode in range(num_games):
+        deck,discard_pile,revealed,hands,game_over=game_setup()
+        current_player = (random.random()<0.5) + 1
+        while game_over==False:
+            if current_player==1:
+                state=get_state(1,hands,revealed,discard_pile)
+                action=get_action(epsilon,params,deck, discard_pile, revealed, hands)
+                next_state,game_over=compute_next_state(action,deck,discard_pile,revealed,hands)             
+            else:
+                opponent_state,game_over=opponent_turn(deck, discard_pile, revealed, hands)
+             
+            current_player=3-current_player
+            
+        # Game over
+        agent_score = sum(card[0] for card in hands[1])
+        opponent_score = sum(card[0] for card in hands[0])
+        # Check if the agent won
+        if agent_score < opponent_score:
+            wins += 1
+    print(f"Number of wins: {wins}/{num_games}")
+
+params,total_return,epsilon_vec,loss=train_agent()
+
+print(f"{params=}")
+
+# test
+test_agent(params,1000)
+
+plt.subplot(1,3,1)
+plt.plot(np.cumsum(total_return))
+plt.title("Total return")
+plt.xlabel("Episodes")
+
+plt.subplot(1,3,2)
+plt.plot(loss)
+plt.title("Loss")
+plt.xlabel("Episodes")
+
+plt.subplot(1,3,3)
+plt.plot(epsilon_vec)
+plt.title("Epsilon")
+plt.xlabel("Episodes")
+plt.show()
