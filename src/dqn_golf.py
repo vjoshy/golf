@@ -364,9 +364,9 @@ def save_model(model, filename="golf_dqn_model.pth"):
 
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=1001)
+policy_net = train_dqn(episodes=500001)
 
-save_model(policy_net, "models/dqn_golf_1k.pth") 
+save_model(policy_net, "models/dqn_golf_500K.pth") 
 
 
 
