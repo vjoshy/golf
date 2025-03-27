@@ -14,10 +14,10 @@ MEMORY_SIZE = 100000
 BATCH_SIZE = 64
 GAMMA = 0.85 # discount factor
 EPSILON_START = 1.0
-EPSILON_END = 0.0001
-EPSILON_DECAY = 0.99 # epsilon decay rate
+EPSILON_END = 0.01
+EPSILON_DECAY = 0.999 # epsilon decay rate
 INITIAL_LR = 0.01
-LR_DECAY = 0.99 # learning rate decay rate
+LR_DECAY = 0.999 # learning rate decay rate
 MIN_LR = 0.0001
 TARGET_UPDATE = 25  # How often to update target network
 
@@ -364,9 +364,9 @@ def save_model(model, filename="golf_dqn_model.pth"):
 
 
 # Train and test the DQN agent
-policy_net = train_dqn(episodes=500001)
+policy_net = train_dqn(episodes=1000001)
 
-save_model(policy_net, "models/dqn_golf_500K.pth") 
+save_model(policy_net, "models/dqn_golf_1M.pth") 
 
 
 

@@ -517,7 +517,7 @@ def test_agent(params, num_games, smart_opponent = False):
     return wins / num_games
 
 
-params,total_return,epsilon_vec,loss=train_agent(50001)
+params,total_return,epsilon_vec,loss=train_agent(10001)
 
 print(f"{params=}")
 
